@@ -1,16 +1,17 @@
 // Sylvain Lefebvre - 2012-03-02
 
+#include <iostream>
+
 #pragma once
 
-#include <iostream>
-#ifdef __APPLE__ //Mac OSX has a different name for the header file
-#include <OpenCL/opencl.h>
+#define CL_TARGET_OPENCL_VERSION 120
+#ifdef __APPLE__ 
+#include <OpenCL/opencl.h> //Mac OSX has a different name for the CL header file
+#include "clv128.hpp" // manually included C++ bindings
 #else
-#define CL_TARGET_OPENCL_VERSION 110
 #include "CL/cl.h"
-
-#endif
 #include "CL/cl.hpp"
+#endif
 
 // ----------------------------------------------------------
 

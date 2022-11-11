@@ -9,15 +9,15 @@
 
 using namespace std;
 
-#include <iostream>
+
 #define CL_TARGET_OPENCL_VERSION 120
-#ifdef __APPLE__ //Mac OSX has a different name for the header file
-#include <OpenCL/opencl.h>
+#ifdef __APPLE__ 
+#include <OpenCL/opencl.h> //Mac OSX has a different name for the CL header file
+#include "clv128.hpp" // manually included C++ bindings
 #else
 #include "CL/cl.h"
-#endif
-
 #include "CL/cl.hpp"
+#endif
 
 // ----------------------------------------------------------
 
