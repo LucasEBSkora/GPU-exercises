@@ -31,7 +31,7 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	int n_generations = atoi(argv[1]);
-	bool periodic = false;
+	int periodic = 0;
 	if (argc >= 3) {
 		periodic = atoi(argv[2]);
 	}
@@ -81,14 +81,13 @@ int main(int argc, char **argv)
 	conway[1*width + 2] = 
 	conway[2*width + 3] =
 	conway[3*width+1] = conway[3*width+2] = conway[3*width+3] = 1;
-
 	cl::Buffer conway_buffer(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
 	clu_Queue->enqueueWriteBuffer(conway_buffer, true, 0, size * sizeof(int), conway);
 
 	kernel->setArg(0, width);
 	kernel->setArg(1, height);
 	kernel->setArg(2, conway_buffer);
-	kernel->setArg(3, periodic)
+	kernel->setArg(3, periodic);
 
 	print_conway(width, height, 0, conway);
 	
@@ -108,7 +107,7 @@ int main(int argc, char **argv)
 void print_conway(int W, int H, int generation, int* board) {
 	std::cout << "W=" << W << "\tH=" << H << "\tgeneration=" << generation << "\tdead X\talive 0\n";
 	for (int i = 0; i < W*H; ++i) {
-		std::cout << ((i % W == 0) ? '\n' : ' ') << ((board[i] == 0) ? 'X' : '0');
+		std::cout << ((i % W == 0) ? '\n' : ' ') << board[i];// ((board[i] == 0) ? 'X' : '0');
 	}
 	std::cout << std::endl;
 }
