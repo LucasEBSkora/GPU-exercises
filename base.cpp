@@ -22,21 +22,24 @@ using namespace std;
 
 // ----------------------------------------------------------
 
-void print_conway(int W, int H, int generation, int* board);
+void print_conway(int W, int H, int generation, int *board);
 
 int main(int argc, char **argv)
 {
-	if (argc < 2) {
+	if (argc < 2)
+	{
 		std::cout << "usage: conway <n_generations> <periodic>\n";
 		return -1;
 	}
 	int n_generations = atoi(argv[1]);
 	int periodic = 0;
-	if (argc >= 3) {
+	if (argc >= 3)
+	{
 		periodic = atoi(argv[2]);
 	}
 
-	if (n_generations <= 0) {
+	if (n_generations <= 0)
+	{
 		return -1;
 	}
 
@@ -55,7 +58,6 @@ int main(int argc, char **argv)
 
 	cl::Kernel *kernel = cluLoadKernel(program, "conway");
 
-
 	// blinker
 	// int width = 5;
 	// int height = 4;
@@ -64,11 +66,11 @@ int main(int argc, char **argv)
 	int width = 5;
 	int height = 5;
 
-	const int size = width*height;
+	const int size = width * height;
 	const int group_size = 8;
 
 	int *conway = new int[size];
-	
+
 	for (int i = 0; i < size; i++)
 	{
 		conway[i] = 0;
@@ -78,9 +80,9 @@ int main(int argc, char **argv)
 	// conway[2*width+1] = conway[2*width+2] = conway[2*width+3] = 1;
 
 	// glider
-	conway[1*width + 2] = 
-	conway[2*width + 3] =
-	conway[3*width+1] = conway[3*width+2] = conway[3*width+3] = 1;
+	conway[1 * width + 2] =
+		conway[2 * width + 3] =
+			conway[3 * width + 1] = conway[3 * width + 2] = conway[3 * width + 3] = 1;
 	cl::Buffer buf1(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
 	cl::Buffer buf2(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
 	clu_Queue->enqueueWriteBuffer(buf1, true, 0, size * sizeof(int), conway);
@@ -90,18 +92,20 @@ int main(int argc, char **argv)
 	kernel->setArg(2, periodic);
 
 	print_conway(width, height, 0, conway);
-	
-	for (int i = 0; i < n_generations; ++i) {
-		if (i % 2) {
-				kernel->setArg(3, buf2);
-				kernel->setArg(4, buf1);
-		} else {
-				kernel->setArg(3, buf1);
-				kernel->setArg(4, buf2);
+
+	for (int i = 0; i < n_generations; ++i)
+	{
+		if (i % 2)
+		{
+			kernel->setArg(3, buf2);
+			kernel->setArg(4, buf1);
 		}
-		clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange,
-										cl::NDRange(size),  // Global work size: number of kernels
-										cl::NDRange(width < height ? width : height)); // Local work size
+		else
+		{
+			kernel->setArg(3, buf1);
+			kernel->setArg(4, buf2);
+		}
+		clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange, cl::NDRange(size));
 		clu_Queue->finish();
 		clu_Queue->enqueueReadBuffer((i % 2) ? buf1 : buf2, true, 0, size * sizeof(int), conway);
 
@@ -111,10 +115,12 @@ int main(int argc, char **argv)
 	delete[] conway;
 }
 
-void print_conway(int W, int H, int generation, int* board) {
+void print_conway(int W, int H, int generation, int *board)
+{
 	std::cout << "W=" << W << "\tH=" << H << "\tgeneration=" << generation << "\tdead X\talive 0\n";
-	for (int i = 0; i < W*H; ++i) {
-		std::cout << ((i % W == 0) ? '\n' : ' ') << board[i];// ((board[i] == 0) ? 'X' : '0');
+	for (int i = 0; i < W * H; ++i)
+	{
+		std::cout << ((i % W == 0) ? '\n' : ' ') << board[i]; // ((board[i] == 0) ? 'X' : '0');
 	}
 	std::cout << std::endl;
 }
