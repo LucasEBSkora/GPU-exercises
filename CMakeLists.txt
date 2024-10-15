@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0)
-project(base)
+project(conway)
 set (CMAKE_CXX_STANDARD 11)
 
 include_directories(
@@ -19,11 +19,11 @@ ELSE (WIN32)
 ENDIF(WIN32)
 
 add_definitions(-DSRC_PATH=\"${CMAKE_SOURCE_DIR}/\")
-add_executable(base base.cpp base.cl common/clutils.cpp)
+add_executable(conway base.cpp base.cl common/clutils.cpp)
 if(APPLE)
-	target_link_libraries(base "-framework OpenCL" )
+	target_link_libraries(conway "-framework OpenCL" )
 else()
-	target_link_libraries(base ${CL_LIBRARIES})
+	target_link_libraries(conway ${CL_LIBRARIES})
 endif()
 
 add_subdirectory(OpenCL-ICD-Loader)
