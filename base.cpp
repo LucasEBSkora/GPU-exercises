@@ -12,6 +12,8 @@
 #include <sstream>
 #include <iomanip>
 #include <chrono>
+#include <tuple>
+#include <vector>
 
 using namespace std;
 
@@ -22,13 +24,21 @@ using namespace std;
 
 // ----------------------------------------------------------
 
-void print_conway(int W, int H, int generation, int *board);
+typedef struct board_s
+{
+	int width;
+	int height;
+	int *board;
+} Board;
+
+Board *build_board(const char *string);
+void print_conway(Board *board, int generation);
 
 int main(int argc, char **argv)
 {
 	if (argc < 2)
 	{
-		std::cout << "usage: conway <n_generations> <periodic>\n";
+		cout << "usage: conway <n_generations> <periodic>\n";
 		return -1;
 	}
 	int n_generations = atoi(argv[1]);
@@ -36,11 +46,6 @@ int main(int argc, char **argv)
 	if (argc >= 3)
 	{
 		periodic = atoi(argv[2]);
-	}
-
-	if (n_generations <= 0)
-	{
-		return -1;
 	}
 
 	const char *clu_File = SRC_PATH "conway.cl"; // path to file containing OpenCL kernel(s) code
@@ -58,40 +63,30 @@ int main(int argc, char **argv)
 
 	cl::Kernel *kernel = cluLoadKernel(program, "conway");
 
-	// blinker
-	// int width = 5;
-	// int height = 4;
+	const char *blinker = "XXXXX\n"
+						  "XXXXX\n"
+						  "XOOOX\n"
+						  "XXXXX\n";
 
-	// glider
-	int width = 5;
-	int height = 5;
+	const char *glider = "XXXXX\n"
+						 "XXOXX\n"
+						 "XXXOX\n"
+						 "XOOOX\n"
+						 "XXXXX\n";
 
-	const int size = width * height;
-	const int group_size = 8;
+	Board *board = build_board(glider);
 
-	int *conway = new int[size];
+	const int size = board->width * board->height;
 
-	for (int i = 0; i < size; i++)
-	{
-		conway[i] = 0;
-	}
-
-	// blinker
-	// conway[2*width+1] = conway[2*width+2] = conway[2*width+3] = 1;
-
-	// glider
-	conway[1 * width + 2] =
-		conway[2 * width + 3] =
-			conway[3 * width + 1] = conway[3 * width + 2] = conway[3 * width + 3] = 1;
 	cl::Buffer buf1(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
 	cl::Buffer buf2(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
-	clu_Queue->enqueueWriteBuffer(buf1, true, 0, size * sizeof(int), conway);
+	clu_Queue->enqueueWriteBuffer(buf1, true, 0, size * sizeof(int), board->board);
 
-	kernel->setArg(0, width);
-	kernel->setArg(1, height);
+	kernel->setArg(0, board->width);
+	kernel->setArg(1, board->height);
 	kernel->setArg(2, periodic);
 
-	print_conway(width, height, 0, conway);
+	print_conway(board, 0);
 
 	for (int i = 0; i < n_generations; ++i)
 	{
@@ -107,20 +102,86 @@ int main(int argc, char **argv)
 		}
 		clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange, cl::NDRange(size));
 		clu_Queue->finish();
-		clu_Queue->enqueueReadBuffer((i % 2) ? buf1 : buf2, true, 0, size * sizeof(int), conway);
+		clu_Queue->enqueueReadBuffer((i % 2) ? buf1 : buf2, true, 0, size * sizeof(int), board->board);
 
-		print_conway(width, height, i + 1, conway);
+		print_conway(board, i + 1);
 	}
 
-	delete[] conway;
+	delete[] board;
 }
 
-void print_conway(int W, int H, int generation, int *board)
+bool process_char(char c, vector<int> &vector)
 {
-	std::cout << "W=" << W << "\tH=" << H << "\tgeneration=" << generation << "\tdead X\talive 0\n";
-	for (int i = 0; i < W * H; ++i)
+	if (c == 'O')
 	{
-		std::cout << ((i % W == 0) ? '\n' : ' ') << board[i]; // ((board[i] == 0) ? 'X' : '0');
+		vector.push_back(1);
+		return true;
 	}
-	std::cout << std::endl;
+	else if (c == 'X')
+	{
+		vector.push_back(0);
+		return true;
+	}
+	return false;
+}
+
+Board *build_board(const char *string)
+{
+	Board *board = new Board();
+	board->width = 0;
+	board->height = 1;
+	vector<int> temp_board;
+
+	int i = 0;
+	for (; string[i] != '\n'; ++i)
+	{
+		char val = string[i];
+		if (!process_char(val, temp_board))
+		{
+			cout << "unexpected value in input string!: " << (int)val << endl;
+			exit(-1);
+		}
+	}
+	board->width = i;
+	++i;
+	int running_width = 0;
+
+	for (; string[i] != '\0'; ++i)
+	{
+		char val = string[i];
+		if (process_char(val, temp_board)) {
+			running_width++;
+		}
+		else if (val == '\n')
+		{
+			if (running_width != board->width)
+			{
+				cout << i;
+				cout << "line " << board->height << " with width " << running_width << " instead of expected " << board->width << '!' << endl;
+				exit(-1);
+			}
+			board->height += 1;
+			running_width = 0;
+		}
+		else
+		{
+			cout << "unexpected value in input string!: " << (int)val << endl;
+			exit(-1);
+		}
+	}
+
+	board->board = new int[temp_board.size()];
+	memcpy(board->board, temp_board.data(), temp_board.size() * sizeof(int));
+
+	return board;
+}
+
+void print_conway(Board *board, int generation)
+{
+	cout << "W=" << board->width << "\tH=" << board->height << "\tgeneration=" << generation << "\tdead X\talive 0\n";
+	for (int i = 0; i < board->width * board->height; ++i)
+	{
+		cout << ((i % board->width == 0) ? '\n' : ' ') << ((board->board[i] == 0) ? 'X' : 'O');
+	}
+	cout << endl;
 }
