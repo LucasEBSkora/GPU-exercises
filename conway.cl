@@ -1,6 +1,6 @@
-__kernel void conway(int width, int heigth,
-                     __global int *board,
-                     int periodic)
+__kernel void conway(int width, int heigth, int periodic,
+                     __global int *in, __global int* out
+                     )
 {
 
     int id = get_global_id(0);
@@ -22,36 +22,34 @@ __kernel void conway(int width, int heigth,
     if (periodic || i != 0)
     {
         if (periodic || j != 0)
-            n_neighbors += board[up * width + left];
+            n_neighbors += in[up * width + left];
 
-        n_neighbors += board[up * width + (j)];
+        n_neighbors += in[up * width + (j)];
 
         if (periodic || j != width - 1)
-            n_neighbors += board[up * width + right];
+            n_neighbors += in[up * width + right];
     }
 
     if (periodic || j != 0)
-        n_neighbors += board[(i)*width + left];
+        n_neighbors += in[(i)*width + left];
     if (periodic || j != width - 1)
-        n_neighbors += board[(i)*width + right];
+        n_neighbors += in[(i)*width + right];
 
     if (periodic || i != heigth - 1)
     {
         if (periodic || j != 0)
-            n_neighbors += board[down * width + left];
-        n_neighbors += board[down * width + (j)];
+            n_neighbors += in[down * width + left];
+        n_neighbors += in[down * width + (j)];
         if (periodic || j != width - 1)
-            n_neighbors += board[down * width + right];
+            n_neighbors += in[down * width + right];
     }
 
-    int new_value = board[id];
+    int new_value = in[id];
 
     if (n_neighbors < 2 || n_neighbors > 3)
         new_value = 0;
     else if (n_neighbors == 3)
         new_value = 1;
 
-    barrier(CLK_GLOBAL_MEM_FENCE);
-
-    board[id] = new_value;
+    out[id] = new_value;
 }

@@ -81,22 +81,29 @@ int main(int argc, char **argv)
 	conway[1*width + 2] = 
 	conway[2*width + 3] =
 	conway[3*width+1] = conway[3*width+2] = conway[3*width+3] = 1;
-	cl::Buffer conway_buffer(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
-	clu_Queue->enqueueWriteBuffer(conway_buffer, true, 0, size * sizeof(int), conway);
+	cl::Buffer buf1(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
+	cl::Buffer buf2(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
+	clu_Queue->enqueueWriteBuffer(buf1, true, 0, size * sizeof(int), conway);
 
 	kernel->setArg(0, width);
 	kernel->setArg(1, height);
-	kernel->setArg(2, conway_buffer);
-	kernel->setArg(3, periodic);
+	kernel->setArg(2, periodic);
 
 	print_conway(width, height, 0, conway);
 	
 	for (int i = 0; i < n_generations; ++i) {
+		if (i % 2) {
+				kernel->setArg(3, buf2);
+				kernel->setArg(4, buf1);
+		} else {
+				kernel->setArg(3, buf1);
+				kernel->setArg(4, buf2);
+		}
 		clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange,
 										cl::NDRange(size),  // Global work size: number of kernels
-										cl::NDRange(size)); // Local work size
+										cl::NDRange(width < height ? width : height)); // Local work size
 		clu_Queue->finish();
-		clu_Queue->enqueueReadBuffer(conway_buffer, true, 0, size * sizeof(int), conway);
+		clu_Queue->enqueueReadBuffer((i % 2) ? buf1 : buf2, true, 0, size * sizeof(int), conway);
 
 		print_conway(width, height, i + 1, conway);
 	}
