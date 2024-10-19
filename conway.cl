@@ -1,6 +1,5 @@
 __kernel void conway(int width, int heigth, int periodic,
-                     __global int *in, __global int* out
-                     )
+                     __global int *in, __global int *out)
 {
 
     int id = get_global_id(0);
@@ -9,39 +8,58 @@ __kernel void conway(int width, int heigth, int periodic,
     int left = j - 1;
     int right = j + 1;
     int up = i - 1;
-    int down = i + 1; 
+    int down = i + 1;
 
     int n_neighbors = 0;
 
-    if (periodic) {
-        if (i == 0) up = heigth - 1;
-        else if (i >= (heigth - 1)) down = 0;
-        if (j == 0) left = width - 1;
-        else if (j >= (width - 1)) right = 0;
-    }
-    if (periodic || i != 0)
+    if (periodic)
     {
-        if (periodic || j != 0)
-            n_neighbors += in[up * width + left];
+        if (i == 0)
+            up = heigth - 1;
+        else if (i >= (heigth - 1))
+            down = 0;
+        if (j == 0)
+            left = width - 1;
+        else if (j >= (width - 1))
+            right = 0;
 
-        n_neighbors += in[up * width + (j)];
+        n_neighbors = in[up * width + left] +
+                      in[up * width + j] +
+                      in[up * width + right] +
 
-        if (periodic || j != width - 1)
-            n_neighbors += in[up * width + right];
+                      in[i * width + left] +
+                      in[i * width + right] +
+
+                      in[down * width + left] +
+                      in[down * width + j] +
+                      in[down * width + right];
     }
-
-    if (periodic || j != 0)
-        n_neighbors += in[(i)*width + left];
-    if (periodic || j != width - 1)
-        n_neighbors += in[(i)*width + right];
-
-    if (periodic || i != heigth - 1)
+    else
     {
-        if (periodic || j != 0)
-            n_neighbors += in[down * width + left];
-        n_neighbors += in[down * width + (j)];
-        if (periodic || j != width - 1)
-            n_neighbors += in[down * width + right];
+        if (i != 0)
+        {
+            if (j != 0)
+                n_neighbors += in[up * width + left];
+
+            n_neighbors += in[up * width + j];
+
+            if (j != width - 1)
+                n_neighbors += in[up * width + right];
+        }
+
+        if (j != 0)
+            n_neighbors += in[i * width + left];
+        if (j != width - 1)
+            n_neighbors += in[i * width + right];
+
+        if (i != heigth - 1)
+        {
+            if (j != 0)
+                n_neighbors += in[down * width + left];
+            n_neighbors += in[down * width + j];
+            if (j != width - 1)
+                n_neighbors += in[down * width + right];
+        }
     }
 
     int new_value = in[id];
