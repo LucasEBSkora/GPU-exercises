@@ -3,62 +3,59 @@ __kernel void conway(int width, int heigth, int periodic,
 {
 
     int id = get_global_id(0);
-    int i = id / width;
-    int j = id % width;
-    int left = j - 1;
-    int right = j + 1;
-    int up = i - 1;
-    int down = i + 1;
+    const int i = id / width;
+    const int j = id % width;
 
     int n_neighbors = 0;
 
     if (periodic)
     {
-        if (i == 0)
-            up = heigth - 1;
-        else if (i >= (heigth - 1))
-            down = 0;
-        if (j == 0)
-            left = width - 1;
-        else if (j >= (width - 1))
-            right = 0;
 
-        n_neighbors = in[up * width + left] +
-                      in[up * width + j] +
-                      in[up * width + right] +
+        int up = width * (i == 0 ? heigth - 1 : i - 1);
+        int down = width * (i >= (heigth - 1) ? 0 : i + 1);
+        int left = j == 0 ? width - 1 : j - 1;
+        int right = (j >= (width - 1)) ? 0 : j + 1;
+
+        n_neighbors = in[up + left] +
+                      in[up + j] +
+                      in[up + right] +
 
                       in[i * width + left] +
                       in[i * width + right] +
 
-                      in[down * width + left] +
-                      in[down * width + j] +
-                      in[down * width + right];
+                      in[down + left] +
+                      in[down + j] +
+                      in[down + right];
     }
     else
     {
         if (i != 0)
         {
+            int top_middle = id - width;
             if (j != 0)
-                n_neighbors += in[up * width + left];
+                n_neighbors += in[top_middle - 1];
 
-            n_neighbors += in[up * width + j];
+            n_neighbors += in[top_middle];
 
             if (j != width - 1)
-                n_neighbors += in[up * width + right];
+                n_neighbors += in[top_middle + 1];
         }
 
         if (j != 0)
-            n_neighbors += in[i * width + left];
+            n_neighbors += in[id - 1];
         if (j != width - 1)
-            n_neighbors += in[i * width + right];
+            n_neighbors += in[id + 1];
 
         if (i != heigth - 1)
         {
+            int bottom_middle = id + width;
             if (j != 0)
-                n_neighbors += in[down * width + left];
-            n_neighbors += in[down * width + j];
+                n_neighbors += in[bottom_middle - 1];
+
+            n_neighbors += in[bottom_middle];
+
             if (j != width - 1)
-                n_neighbors += in[down * width + right];
+                n_neighbors += in[bottom_middle + 1];
         }
     }
 
