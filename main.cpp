@@ -64,7 +64,7 @@ int main(int argc, char **argv)
 	int *input_data = new int[2 * size];
 	for (int i = 0; i < 2 * size; i++)
 	{
-		int value = rand() % 100;
+		int value = rand() % 10000;
 		input_data[i] = value;
 	}
 	cout << "input data:\n";
@@ -99,25 +99,25 @@ int main(int argc, char **argv)
 
 	delete[] input_data;
 
-	const int distance_buffer_size = size * (size - 1) / 2;
+	const int distance_buffer_size = size * size;
 
 	cl::Buffer buffer1(*clu_Context, CL_MEM_READ_WRITE, distance_buffer_size * sizeof(int));
 	cl::Buffer buffer2(*clu_Context, CL_MEM_READ_WRITE, distance_buffer_size * sizeof(int));
-	
+
 	kernel_distances->setArg(0, point_buffer);
 	kernel_distances->setArg(1, buffer1);
 	kernel_distances->setArg(2, size);
 	clu_Queue->enqueueNDRangeKernel(*kernel_distances, cl::NullRange, cl::NDRange(distance_buffer_size));
 	clu_Queue->finish();
 
-	int* distances = new int[distance_buffer_size];
+	int *distances = new int[distance_buffer_size];
 	clu_Queue->enqueueReadBuffer(buffer1, true, 0, distance_buffer_size * sizeof(int), distances);
 
 	cout << "\nsquares of distances calculated by GPU: ";
 	for (int i = 0; i < distance_buffer_size; ++i)
 		cout << distances[i] << ' ';
 	cout << endl;
-	
+
 	cl::Kernel *kernel_reduction = cluLoadKernel(program, "hierarchical_reduction_min");
 
 	int current_size = distance_buffer_size;
@@ -138,11 +138,11 @@ int main(int argc, char **argv)
 		int next_size = ceil(current_size / 2.0);
 		clu_Queue->enqueueNDRangeKernel(*kernel_reduction, cl::NullRange, cl::NDRange(next_size));
 		clu_Queue->finish();
-		
+
 		clu_Queue->enqueueReadBuffer((i % 2 == 0) ? buffer2 : buffer1, true, 0, distance_buffer_size * sizeof(int), distances);
-		
+
 		current_size = next_size;
-		
+
 		cout << "iteration " << i << ": ";
 		for (int j = 0; j < current_size; ++j)
 			cout << distances[j] << " ";
@@ -150,5 +150,10 @@ int main(int argc, char **argv)
 	}
 
 	cout << "\nGPU result: smallest distance is " << sqrt(distances[0]) << '\n';
+
+	if (distances[0] != result_cpu)
+	{
+		cout << "Difference between CPU and GPU calculation! " << sqrt(distances[0]) << " != " << sqrt(result_cpu) << '\n';
+	}
 	delete[] distances;
 }
