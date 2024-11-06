@@ -26,8 +26,10 @@ using namespace std;
 
 // ----------------------------------------------------------
 
-void print_array(const int * array, const int size) {
-	if (!array || !size) return;
+void print_array(const int *array, const int size)
+{
+	if (!array || !size)
+		return;
 	cout << array[0];
 	for (int i = 1; i < size; ++i)
 		cout << ' ' << array[i];
@@ -36,7 +38,8 @@ void print_array(const int * array, const int size) {
 
 int main(int argc, char **argv)
 {
-	if (argc < 2) {
+	if (argc < 2)
+	{
 		cout << "usage: td2 <N>\n\twhere N is the size of the random array to generate\n";
 		exit(-1);
 	}
@@ -47,37 +50,32 @@ int main(int argc, char **argv)
 	// Initialize OpenCL
 	cluInit();
 
-	// After this call you have access to
-	// clu_Context;      <= OpenCL context (pointer)
-	// clu_Devices;      <= OpenCL device list (vector)
-	// clu_Queue;        <= OpenCL queue (pointer)
-
 	// Load Program
 	cl::Program *program = cluLoadProgram(clu_File);
 
 	cl::Kernel *kernel = cluLoadKernel(program, "odd_even_sort");
-
+	
 	const int size = N;
 
 	srand(time(nullptr));
 
-	cl::Buffer buffer1(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
-	cl::Buffer buffer2(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
+	cl::Buffer buffer(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
 
 	int *input_data = new int[size];
 	for (int i = 0; i < size; i++)
 	{
-		int value = rand() % 100;
+		int value = rand() % 10000;
 		input_data[i] = value;
 	}
 	cout << "input data:\n";
 	print_array(input_data, size);
 
-	clu_Queue->enqueueWriteBuffer(buffer1, true, 0, size * sizeof(int), input_data);
+	clu_Queue->enqueueWriteBuffer(buffer, true, 0, size * sizeof(int), input_data);
 	std::vector<int> result_cpu{};
-	
-	for (int i = 0; i < size; ++i) result_cpu.push_back(input_data[i]);
-	
+
+	for (int i = 0; i < size; ++i)
+		result_cpu.push_back(input_data[i]);
+
 	std::sort(result_cpu.begin(), result_cpu.end());
 
 	cout << "\nCPU result:\n";
@@ -85,36 +83,27 @@ int main(int argc, char **argv)
 
 	delete[] input_data;
 
-	
 	int *result_gpu = new int[size];
 
-	kernel->setArg(3, size);
+	kernel->setArg(0, buffer);
+	kernel->setArg(2, size);
 
-	for (int i = 0; i < N; ++i) {
-		if (i % 2 == 0)
-		{
-			kernel->setArg(0, buffer1);
-			kernel->setArg(1, buffer2);
-		}
-		else
-		{
-			kernel->setArg(0, buffer2);
-			kernel->setArg(1, buffer1);
-		}
-		kernel->setArg(2, i);
-		
-		clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange, cl::NDRange(size/2));
+	for (int i = 0; i < N; ++i)
+	{
+		kernel->setArg(1, i);
+
+		clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange, cl::NDRange((i % 2 == 0) ? size / 2 : (size - 1) / 2));
 		clu_Queue->finish();
 
 		int *c = new int[size];
-		clu_Queue->enqueueReadBuffer((i % 2 == 0) ? buffer2 : buffer1, true, 0, size * sizeof(int), result_gpu);
-		cout << "iteration " << i << ":\n";
-		print_array(result_gpu, size);
-
+		clu_Queue->enqueueReadBuffer(buffer, true, 0, size * sizeof(int), result_gpu);
+		// cout << "iteration " << i << ":\n";
+		// print_array(result_gpu, size);
 	}
 
-	for (int i = 0; i < size; ++i) {
-		if (result_cpu[i] != result_gpu[i]) 
+	for (int i = 0; i < size; ++i)
+	{
+		if (result_cpu[i] != result_gpu[i])
 			cout << "value at index " << i << " is " << result_gpu[i] << " but should be " << result_cpu[i] << '\n';
 	}
 	delete[] result_gpu;
