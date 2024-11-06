@@ -14,6 +14,8 @@
 #include <sstream>
 #include <iomanip>
 #include <chrono>
+#include <algorithm>
+#include <vector>
 
 using namespace std;
 
@@ -35,11 +37,12 @@ void print_array(const int * array, const int size) {
 int main(int argc, char **argv)
 {
 	if (argc < 2) {
-		cout << "usage: td2 <N>\n\twhere 2^N is the size of the random array to generate\n";
+		cout << "usage: td2 <N>\n\twhere N is the size of the random array to generate\n";
+		exit(-1);
 	}
 	const int N = atoi(argv[1]);
 
-	const char *clu_File = SRC_PATH "parallel_scan.cl"; // path to file containing OpenCL kernel(s) code
+	const char *clu_File = SRC_PATH "parallel_sort.cl"; // path to file containing OpenCL kernel(s) code
 
 	// Initialize OpenCL
 	cluInit();
@@ -52,9 +55,9 @@ int main(int argc, char **argv)
 	// Load Program
 	cl::Program *program = cluLoadProgram(clu_File);
 
-	cl::Kernel *kernel = cluLoadKernel(program, "parallel_scan");
+	cl::Kernel *kernel = cluLoadKernel(program, "odd_even_sort");
 
-	const int size = (1 << N);
+	const int size = N;
 
 	srand(time(nullptr));
 
@@ -71,20 +74,21 @@ int main(int argc, char **argv)
 	print_array(input_data, size);
 
 	clu_Queue->enqueueWriteBuffer(buffer1, true, 0, size * sizeof(int), input_data);
-	int *result_cpu = new int[size];
-	result_cpu[0] = input_data[0];
-
-	for (int i = 1; i < size; i++) {
-		result_cpu[i] = result_cpu[i - 1] + input_data[i];
-	}
+	std::vector<int> result_cpu{};
+	
+	for (int i = 0; i < size; ++i) result_cpu.push_back(input_data[i]);
+	
+	std::sort(result_cpu.begin(), result_cpu.end());
 
 	cout << "\nCPU result:\n";
-	print_array(result_cpu, size);
+	print_array(result_cpu.data(), size);
 
 	delete[] input_data;
 
 	
 	int *result_gpu = new int[size];
+
+	kernel->setArg(3, size);
 
 	for (int i = 0; i < N; ++i) {
 		if (i % 2 == 0)
@@ -99,7 +103,7 @@ int main(int argc, char **argv)
 		}
 		kernel->setArg(2, i);
 		
-		clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange, cl::NDRange(size));
+		clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange, cl::NDRange(size/2));
 		clu_Queue->finish();
 
 		int *c = new int[size];
@@ -113,6 +117,5 @@ int main(int argc, char **argv)
 		if (result_cpu[i] != result_gpu[i]) 
 			cout << "value at index " << i << " is " << result_gpu[i] << " but should be " << result_cpu[i] << '\n';
 	}
-	delete[] result_cpu;
 	delete[] result_gpu;
 }
