@@ -15,7 +15,7 @@
 #include <iomanip>
 #include <chrono>
 #include <algorithm>
-#include <vector>
+#include <set>
 
 using namespace std;
 
@@ -36,107 +36,131 @@ void print_array(const int *array, const int size)
 	cout << endl;
 }
 
-typedef struct compare_pair_s
+set<int> generate_value_set(const int size, const int max, const set<int> &already_used = {})
 {
-	int first;
-	int second;
-} ComparePair;
+	set<int> values;
+	while (values.size() < size)
+	{
+		int val = rand() % max;
+		if (!values.count(val) && !already_used.count(val))
+		{
+			values.insert(val);
+		}
+	}
+	return values;
+}
 
-typedef struct iteration_s
+int *set_to_array(const set<int> &set)
 {
-	int n_pairs;
-	ComparePair pairs[10];
-} Iteration;
+	int *array = new int[set.size()];
+	int i = 0;
+	for (int value : set)
+	{
+		array[i++] = value;
+	}
 
-typedef struct network_s
+	return array;
+}
+
+void cpu_merge(const int *A, const int *B, int *C, const int size)
 {
-	int n_iterations;
-	Iteration iterations[10];
-} Network;
-
-Network networks[6] = {
-	{1, {{1, {{0,1}}}}},
-	{3, {{1, {{0,2}}}, {1, {{0,1}}}, {1, {{1,2}}}}}
-};
+	int i = 0;
+	int j = 0;
+	for (int k = 0; k < 2 * size; ++k)
+	{
+		if (i >= size)
+		{
+			C[k] = B[j++];
+		}
+		else if (j >= size)
+		{
+			C[k] = A[i++];
+		}
+		else if (A[i] < B[j])
+		{
+			C[k] = A[i++];
+		}
+		else
+		{
+			C[k] = B[j++];
+		}
+	}
+}
 
 int main(int argc, char **argv)
 {
-	if (argc < 2)
+	if (argc < 3)
 	{
-		cout << "usage: td2 <N>\n\twhere 2 < N < 8 is the size of the random array to generate\n";
+		cout << "usage: td2 <N> <MAX> \n\twhere N is the size of the random arrays to generate\n\tand MAX is the maximum allowed value\n";
 		exit(-1);
 	}
 	const int N = atoi(argv[1]);
+	const int MAX = atoi(argv[2]);
 
+	if (MAX <= 2*N) {
+		cout << "value of MAX to small to create arrays without repetition!\n";
+		exit(0);
+	}
 	const int size = N;
 
 	srand(time(nullptr));
-	int *input_data = new int[size];
-	for (int i = 0; i < size; i++)
-	{
-		int value = rand() % 10000;
-		input_data[i] = value;
-	}
-	cout << "input data:\n";
-	print_array(input_data, size);
+	set<int> A_set = generate_value_set(size, MAX);
+	set<int> B_set = generate_value_set(size, MAX, A_set);
 
-	vector<int> result_cpu;
-	for (int i = 0; i < size; ++i)
-		result_cpu.push_back(input_data[i]);
+	int *A = set_to_array(A_set);
+	int *B = set_to_array(B_set);
 
-	std::sort(result_cpu.begin(), result_cpu.end());
+	cout << "A:";
+	print_array(A, size);
+	cout << "\nB:";
+	print_array(B, size);
+
+	int *result_cpu = new int[2 * size];
+
+	cpu_merge(A, B, result_cpu, size);
 
 	cout << "\nCPU result:\n";
-	print_array(result_cpu.data(), size);
+	print_array(result_cpu, 2 * size);
 
-	const char *clu_File = SRC_PATH "optimal_network.cl"; // path to file containing OpenCL kernel(s) code
+	const char *clu_File = SRC_PATH "parallel_merge.cl"; // path to file containing OpenCL kernel(s) code
 
-	// // Initialize OpenCL
+	// // // Initialize OpenCL
 	cluInit();
 
-	// // Load Program
+	// // // Load Program
 	cl::Program *program = cluLoadProgram(clu_File);
 
-	cl::Kernel *kernel = cluLoadKernel(program, "optimal_network");
+	cl::Kernel *kernel = cluLoadKernel(program, "parallel_merge");
 
-	cl::Buffer buffer(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
-	cl::Buffer buffer_pairs(*clu_Context, CL_MEM_READ_WRITE, 20 * sizeof(int));
+	cl::Buffer bufA(*clu_Context, CL_MEM_READ_ONLY, size * sizeof(int));
+	cl::Buffer bufB(*clu_Context, CL_MEM_READ_ONLY, size * sizeof(int));
+	cl::Buffer bufResult(*clu_Context, CL_MEM_WRITE_ONLY, 2 * size * sizeof(int));
 
-	clu_Queue->enqueueWriteBuffer(buffer, true, 0, size * sizeof(int), input_data);
+	clu_Queue->enqueueWriteBuffer(bufA, true, 0, size * sizeof(int), A);
+	clu_Queue->enqueueWriteBuffer(bufB, true, 0, size * sizeof(int), B);
 
-	delete[] input_data;
+	delete[] A;
+	delete[] B;
 
-	int *result_gpu = new int[size];
+	kernel->setArg(0, bufA);
+	kernel->setArg(1, bufB);
+	kernel->setArg(2, bufResult);
+	kernel->setArg(3, size);
 
-	const int network_index = size - 2;
+	clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange, cl::NDRange(2 * size));
+	clu_Queue->finish();
 
-	kernel->setArg(0, buffer);
+	int *result_gpu = new int[2 * size];
+	clu_Queue->enqueueReadBuffer(bufResult, true, 0, 2 * size * sizeof(int), result_gpu);
 
-	Network& network = networks[network_index]; 
+	cout << "\nGPU result:\n";
+	print_array(result_gpu, 2 * size);
 
-	for (int i = 0; i < network.n_iterations; ++i)
-	{
-		Iteration& it = network.iterations[i];
-
-		clu_Queue->enqueueWriteBuffer(buffer_pairs, true, 0, it.n_pairs * 2 * sizeof(int), (int*) it.pairs);
-
-
-		kernel->setArg(1, buffer_pairs);
-		
-
-		clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange, cl::NDRange(it.n_pairs));
-		clu_Queue->finish();
-
-		int *c = new int[size];
-		clu_Queue->enqueueReadBuffer(buffer, true, 0, size * sizeof(int), result_gpu);
-		cout << "iteration " << i << ":\n";
-		print_array(result_gpu, size);
-	}
-
-	for (int i = 0; i < size; ++i)
+	for (int i = 0; i < 2 * size; ++i)
 	{
 		if (result_cpu[i] != result_gpu[i])
 			cout << "value at index " << i << " is " << result_gpu[i] << " but should be " << result_cpu[i] << '\n';
 	}
+	delete[] result_cpu;
 	delete[] result_gpu;
 }
