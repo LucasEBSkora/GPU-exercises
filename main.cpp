@@ -36,33 +36,41 @@ void print_array(const int *array, const int size)
 	cout << endl;
 }
 
-int sort(int *T, int L, int R, bool increasing, int stage = 0);
+typedef struct compare_pair_s
+{
+	int first;
+	int second;
+} ComparePair;
+
+typedef struct iteration_s
+{
+	int n_pairs;
+	ComparePair pairs[10];
+} Iteration;
+
+typedef struct network_s
+{
+	int n_iterations;
+	Iteration iterations[10];
+} Network;
+
+Network networks[6] = {
+	{1, {{1, {{0,1}}}}},
+	{3, {{1, {{0,2}}}, {1, {{0,1}}}, {1, {{1,2}}}}}
+};
 
 int main(int argc, char **argv)
 {
 	if (argc < 2)
 	{
-		cout << "usage: td2 <N>\n\twhere 2^N is the size of the random array to generate\n";
+		cout << "usage: td2 <N>\n\twhere 2 < N < 8 is the size of the random array to generate\n";
 		exit(-1);
 	}
 	const int N = atoi(argv[1]);
 
-	// const char *clu_File = SRC_PATH "parallel_sort.cl"; // path to file containing OpenCL kernel(s) code
-
-	// // Initialize OpenCL
-	// cluInit();
-
-	// // Load Program
-	// cl::Program *program = cluLoadProgram(clu_File);
-
-	// cl::Kernel *kernel = cluLoadKernel(program, "odd_even_sort");
-
-	const int size = (1 << N);
+	const int size = N;
 
 	srand(time(nullptr));
-
-	// cl::Buffer buffer(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
-
 	int *input_data = new int[size];
 	for (int i = 0; i < size; i++)
 	{
@@ -72,88 +80,63 @@ int main(int argc, char **argv)
 	cout << "input data:\n";
 	print_array(input_data, size);
 
-	// clu_Queue->enqueueWriteBuffer(buffer, true, 0, size * sizeof(int), input_data);
+	vector<int> result_cpu;
+	for (int i = 0; i < size; ++i)
+		result_cpu.push_back(input_data[i]);
 
-	int *result_cpu = new int[size];
-	memcpy(result_cpu, input_data, size * sizeof(int));
-
-	sort(result_cpu, 0, size, true);
+	std::sort(result_cpu.begin(), result_cpu.end());
 
 	cout << "\nCPU result:\n";
-	print_array(result_cpu, size);
+	print_array(result_cpu.data(), size);
+
+	const char *clu_File = SRC_PATH "optimal_network.cl"; // path to file containing OpenCL kernel(s) code
+
+	// // Initialize OpenCL
+	cluInit();
+
+	// // Load Program
+	cl::Program *program = cluLoadProgram(clu_File);
+
+	cl::Kernel *kernel = cluLoadKernel(program, "optimal_network");
+
+	cl::Buffer buffer(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
+	cl::Buffer buffer_pairs(*clu_Context, CL_MEM_READ_WRITE, 20 * sizeof(int));
+
+	clu_Queue->enqueueWriteBuffer(buffer, true, 0, size * sizeof(int), input_data);
 
 	delete[] input_data;
 
 	int *result_gpu = new int[size];
 
-	// kernel->setArg(0, buffer);
-	// kernel->setArg(2, size);
+	const int network_index = size - 2;
 
-	// for (int i = 0; i < N; ++i)
-	// {
-	// 	kernel->setArg(1, i);
+	kernel->setArg(0, buffer);
 
-	// 	clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange, cl::NDRange((i % 2 == 0) ? size / 2 : (size - 1) / 2));
-	// 	clu_Queue->finish();
+	Network& network = networks[network_index]; 
 
-	// 	int *c = new int[size];
-	// 	clu_Queue->enqueueReadBuffer(buffer, true, 0, size * sizeof(int), result_gpu);
-	// 	// cout << "iteration " << i << ":\n";
-	// 	// print_array(result_gpu, size);
-	// }
-
-	// for (int i = 0; i < size; ++i)
-	// {
-	// 	if (result_cpu[i] != result_gpu[i])
-	// 		cout << "value at index " << i << " is " << result_gpu[i] << " but should be " << result_cpu[i] << '\n';
-	// }
-	// delete[] result_gpu;
-	delete[] result_cpu;
-}
-
-void swap(int *T, int first, int second)
-{
-	// cout << "swap: " << first << " with " << second << endl;
-	const int aux = T[first];
-	T[first] = T[second];
-	T[second] = aux;
-}
-
-int compare(int *T, int L, int R, bool increasing, int stage, int column)
-{
-	int k = (R - L) / 2;
-	for (int i = 0; i < k; ++i)
+	for (int i = 0; i < network.n_iterations; ++i)
 	{
-		cout << "stage " << stage << " column " <<  column
-			 << ", T[" << L + i << "] " 
-			 << (increasing ? '>' : '<')
-			 << " T[" << L + i + k << "]\n";
-		if ((increasing && T[L + i] > T[L + i + k]) ||
-			(!increasing && T[L + i] < T[L + i + k]))
-			swap(T, L + i, L + i + k);
-	}
-	return column+1;
-}
+		Iteration& it = network.iterations[i];
 
-int merge(int *T, int L, int R, bool increasing, int stage, int column = 0)
-{
-	if (R - L > 1)
-	{
-		column = compare(T, L, R, increasing, stage, column);
-		merge(T, L, (L + R) / 2, increasing, stage);
-		merge(T, (L + R) / 2, R, increasing, stage);
-	}
-	return column;
-}
+		clu_Queue->enqueueWriteBuffer(buffer_pairs, true, 0, it.n_pairs * 2 * sizeof(int), (int*) it.pairs);
 
-int sort(int *T, int L, int R, bool increasing, int stage)
-{
-	if (R - L > 1)
-	{
-		sort(T, L, (R + L) / 2, true, stage);
-		stage = sort(T, (R + L) / 2, R, false, stage);
-		merge(T, L, R, increasing, stage);
-		stage++;
+
+		kernel->setArg(1, buffer_pairs);
+		
+
+		clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange, cl::NDRange(it.n_pairs));
+		clu_Queue->finish();
+
+		int *c = new int[size];
+		clu_Queue->enqueueReadBuffer(buffer, true, 0, size * sizeof(int), result_gpu);
+		cout << "iteration " << i << ":\n";
+		print_array(result_gpu, size);
 	}
-	return stage;
+
+	for (int i = 0; i < size; ++i)
+	{
+		if (result_cpu[i] != result_gpu[i])
+			cout << "value at index " << i << " is " << result_gpu[i] << " but should be " << result_cpu[i] << '\n';
+	}
+	delete[] result_gpu;
 }

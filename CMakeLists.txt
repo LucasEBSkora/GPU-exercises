@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0)
-project(sort)
+project(td3)
 set (CMAKE_CXX_STANDARD 11)
 
 include_directories(
@@ -19,11 +19,11 @@ ELSE (WIN32)
 ENDIF(WIN32)
 
 add_definitions(-DSRC_PATH=\"${CMAKE_SOURCE_DIR}/\")
-add_executable(sort main.cpp common/clutils.cpp)
+add_executable(td3 main.cpp common/clutils.cpp)
 if(APPLE)
-	target_link_libraries(sort "-framework OpenCL" )
+	target_link_libraries(td3 "-framework OpenCL" )
 else()
-	target_link_libraries(sort ${CL_LIBRARIES})
+	target_link_libraries(td3 ${CL_LIBRARIES})
 endif()
 
 add_subdirectory(OpenCL-ICD-Loader)
