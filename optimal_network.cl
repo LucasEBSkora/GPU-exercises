@@ -7,7 +7,7 @@ __kernel void optimal_network(
     const int second = compare_pairs[2*id+1];
 
     if(buf[first] > buf[second]) {
-        int aux = buf[first];
+        const int aux = buf[first];
         buf[first] = buf[second];
         buf[second] = aux;
     }

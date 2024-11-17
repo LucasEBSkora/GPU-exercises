@@ -26,6 +26,78 @@ using namespace std;
 
 // ----------------------------------------------------------
 
+#define MIN_N 1
+#define MAX_N 21
+
+int *generate_input_array(const int size);
+
+void print_array(const int *array, const int size);
+void print_array(const vector<int> &array);
+
+vector<int> sort_array_cpu(const int *input_data, const int size);
+
+using Iteration = vector<int>;
+using Network = vector<Iteration>;
+
+Network get_network(const int size);
+int *sort_array_gpu(const int *input_data, const int size, const char *path);
+
+void print_usage_and_exit()
+{
+	cerr << "usage: td2 <networks_file> <N>"
+		 << "\n\tand networks_file is the path to the file with the networks"
+		 << "\n\twhere " << MIN_N << " < N < "
+		 << MAX_N << " is the size of the random array to generate\n";
+	exit(-1);
+}
+
+int main(int argc, char **argv)
+{
+	if (argc < 3)
+		print_usage_and_exit();
+
+	const char *networks_file_path = argv[1];
+	const int N = atoi(argv[2]);
+
+	if (N < MIN_N || N > MAX_N)
+		print_usage_and_exit();
+
+	const int size = N;
+
+	int *input_data = generate_input_array(size);
+
+	cout << "input data:\n";
+	print_array(input_data, size);
+
+	vector<int> result_cpu = sort_array_cpu(input_data, size);
+
+	cout << "\nCPU result:\n";
+	print_array(result_cpu);
+	cout << '\n';
+
+	int *result_gpu = sort_array_gpu(input_data, size, networks_file_path);
+
+	for (int i = 0; i < size; ++i)
+	{
+		if (result_cpu[i] != result_gpu[i])
+			cout << "value at index " << i << " is " << result_gpu[i] << " but should be " << result_cpu[i] << '\n';
+	}
+	delete[] input_data;
+	delete[] result_gpu;
+}
+
+int *generate_input_array(const int size)
+{
+	srand(time(nullptr));
+	int *input_data = new int[size];
+	for (int i = 0; i < size; i++)
+	{
+		int value = rand() % 10000;
+		input_data[i] = value;
+	}
+	return input_data;
+}
+
 void print_array(const int *array, const int size)
 {
 	if (!array || !size)
@@ -36,58 +108,87 @@ void print_array(const int *array, const int size)
 	cout << endl;
 }
 
-typedef struct compare_pair_s
+void print_array(const vector<int> &array)
 {
-	int first;
-	int second;
-} ComparePair;
+	print_array(array.data(), array.size());
+}
 
-typedef struct iteration_s
+vector<int> sort_array_cpu(const int *input_data, const int size)
 {
-	int n_pairs;
-	ComparePair pairs[10];
-} Iteration;
+	vector<int> array(input_data, input_data + size);
 
-typedef struct network_s
+	std::sort(array.begin(), array.end());
+	return array;
+}
+
+// advances a file to the beginning of the
+void advance_to_line(ifstream &file, const unsigned int line_number)
 {
-	int n_iterations;
-	Iteration iterations[10];
-} Network;
-
-Network networks[6] = {
-	{1, {{1, {{0,1}}}}},
-	{3, {{1, {{0,2}}}, {1, {{0,1}}}, {1, {{1,2}}}}}
-};
-
-int main(int argc, char **argv)
-{
-	if (argc < 2)
+	// efficient way of skipping lines in a file from https://stackoverflow.com/a/25012566
+	for (int i = 1; i < line_number; ++i)
 	{
-		cout << "usage: td2 <N>\n\twhere 2 < N < 8 is the size of the random array to generate\n";
+		if (file.ignore(numeric_limits<streamsize>::max(), file.widen('\n')).eof())
+		{
+			cerr << "no network of size " << line_number << " in file!" << endl;
+			file.close();
+			exit(-1);
+		}
+	}
+}
+
+Network parse_file(ifstream &stream)
+{
+	Network net;
+	bool done = false;
+	while (!stream.eof() && !done)
+	{
+		char c;
+		stream.get(c);
+		switch (c)
+		{
+		case '[':
+			net.push_back({});
+			break;
+		case '(':
+		{
+			int first, second;
+			stream >> first;
+			char comma;
+			stream >> comma;
+			stream >> second;
+			net.back().push_back(first);
+			net.back().push_back(second);
+			break;
+		}
+		case '\n':
+			done = true;
+			break;
+		// just ignores all other characters (specially ']' and ')' ) because it doesn't really add anything
+		default:
+			break;
+		}
+	}
+
+	return net;
+}
+
+Network get_network(const char *path, const int size)
+{
+	ifstream networks_file{path};
+	if (!networks_file)
+	{
+		cerr << "file with networks not found at path " << path;
 		exit(-1);
 	}
-	const int N = atoi(argv[1]);
+	advance_to_line(networks_file, size);
 
-	const int size = N;
+	return parse_file(networks_file);
+}
 
-	srand(time(nullptr));
-	int *input_data = new int[size];
-	for (int i = 0; i < size; i++)
-	{
-		int value = rand() % 10000;
-		input_data[i] = value;
-	}
-	cout << "input data:\n";
-	print_array(input_data, size);
+int *sort_array_gpu(const int *input_data, const int size, const char *path)
+{
 
-	vector<int> result_cpu;
-	for (int i = 0; i < size; ++i)
-		result_cpu.push_back(input_data[i]);
-
-	std::sort(result_cpu.begin(), result_cpu.end());
-
-	cout << "\nCPU result:\n";
-	print_array(result_cpu.data(), size);
+	const Network network = get_network(path, size);
 
 	const char *clu_File = SRC_PATH "optimal_network.cl"; // path to file containing OpenCL kernel(s) code
 
@@ -100,43 +201,29 @@ int main(int argc, char **argv)
 	cl::Kernel *kernel = cluLoadKernel(program, "optimal_network");
 
 	cl::Buffer buffer(*clu_Context, CL_MEM_READ_WRITE, size * sizeof(int));
-	cl::Buffer buffer_pairs(*clu_Context, CL_MEM_READ_WRITE, 20 * sizeof(int));
+	cl::Buffer buffer_pairs(*clu_Context, CL_MEM_READ_WRITE, 2 * size * sizeof(int));
 
 	clu_Queue->enqueueWriteBuffer(buffer, true, 0, size * sizeof(int), input_data);
 
-	delete[] input_data;
-
-	int *result_gpu = new int[size];
-
-	const int network_index = size - 2;
+	int *C = new int[size];
 
 	kernel->setArg(0, buffer);
+	kernel->setArg(1, buffer_pairs);
 
-	Network& network = networks[network_index]; 
-
-	for (int i = 0; i < network.n_iterations; ++i)
+	for (int i = 0; i < network.size(); ++i)
 	{
-		Iteration& it = network.iterations[i];
+		const Iteration &it = network[i];
 
-		clu_Queue->enqueueWriteBuffer(buffer_pairs, true, 0, it.n_pairs * 2 * sizeof(int), (int*) it.pairs);
+		clu_Queue->enqueueWriteBuffer(buffer_pairs, true, 0, it.size() * sizeof(int), it.data());
 
-
-		kernel->setArg(1, buffer_pairs);
-		
-
-		clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange, cl::NDRange(it.n_pairs));
+		clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange, cl::NDRange(it.size()));
 		clu_Queue->finish();
 
 		int *c = new int[size];
-		clu_Queue->enqueueReadBuffer(buffer, true, 0, size * sizeof(int), result_gpu);
+		clu_Queue->enqueueReadBuffer(buffer, true, 0, size * sizeof(int), C);
 		cout << "iteration " << i << ":\n";
-		print_array(result_gpu, size);
+		print_array(C, size);
 	}
 
-	for (int i = 0; i < size; ++i)
-	{
-		if (result_cpu[i] != result_gpu[i])
-			cout << "value at index " << i << " is " << result_gpu[i] << " but should be " << result_cpu[i] << '\n';
-	}
-	delete[] result_gpu;
+	return C;
 }
