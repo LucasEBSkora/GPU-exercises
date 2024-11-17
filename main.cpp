@@ -36,6 +36,7 @@ void print_array(const int *array, const int size)
 	cout << endl;
 }
 
+// Generates a set of values without any of the elements from the already_used set
 set<int> generate_value_set(const int size, const int max, const set<int> &already_used = {})
 {
 	set<int> values;
@@ -50,6 +51,7 @@ set<int> generate_value_set(const int size, const int max, const set<int> &alrea
 	return values;
 }
 
+// converts a std set to a c-style array
 int *set_to_array(const set<int> &set)
 {
 	int *array = new int[set.size()];
@@ -87,6 +89,36 @@ void cpu_merge(const int *A, const int *B, int *C, const int size)
 	}
 }
 
+void gpu_merge(const int *A, const int *B, int *C, const int size)
+{
+	const char *clu_File = SRC_PATH "parallel_merge.cl"; // path to file containing OpenCL kernel(s) code
+
+	// // // Initialize OpenCL
+	cluInit();
+
+	// // // Load Program
+	cl::Program *program = cluLoadProgram(clu_File);
+
+	cl::Kernel *kernel = cluLoadKernel(program, "parallel_merge");
+
+	cl::Buffer bufA(*clu_Context, CL_MEM_READ_ONLY, size * sizeof(int));
+	cl::Buffer bufB(*clu_Context, CL_MEM_READ_ONLY, size * sizeof(int));
+	cl::Buffer bufResult(*clu_Context, CL_MEM_WRITE_ONLY, 2 * size * sizeof(int));
+
+	clu_Queue->enqueueWriteBuffer(bufA, true, 0, size * sizeof(int), A);
+	clu_Queue->enqueueWriteBuffer(bufB, true, 0, size * sizeof(int), B);
+
+	kernel->setArg(0, bufA);
+	kernel->setArg(1, bufB);
+	kernel->setArg(2, bufResult);
+	kernel->setArg(3, size);
+
+	clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange, cl::NDRange(2 * size));
+	clu_Queue->finish();
+
+	clu_Queue->enqueueReadBuffer(bufResult, true, 0, 2 * size * sizeof(int), C);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc < 3)
@@ -97,8 +129,9 @@ int main(int argc, char **argv)
 	const int N = atoi(argv[1]);
 	const int MAX = atoi(argv[2]);
 
-	if (MAX <= 2*N) {
-		cout << "value of MAX to small to create arrays without repetition!\n";
+	if (MAX <= 2 * N)
+	{
+		cout << "value of MAX too small to create arrays without repetition!\n";
 		exit(0);
 	}
 	const int size = N;
@@ -122,36 +155,8 @@ int main(int argc, char **argv)
 	cout << "\nCPU result:\n";
 	print_array(result_cpu, 2 * size);
 
-	const char *clu_File = SRC_PATH "parallel_merge.cl"; // path to file containing OpenCL kernel(s) code
-
-	// // // Initialize OpenCL
-	cluInit();
-
-	// // // Load Program
-	cl::Program *program = cluLoadProgram(clu_File);
-
-	cl::Kernel *kernel = cluLoadKernel(program, "parallel_merge");
-
-	cl::Buffer bufA(*clu_Context, CL_MEM_READ_ONLY, size * sizeof(int));
-	cl::Buffer bufB(*clu_Context, CL_MEM_READ_ONLY, size * sizeof(int));
-	cl::Buffer bufResult(*clu_Context, CL_MEM_WRITE_ONLY, 2 * size * sizeof(int));
-
-	clu_Queue->enqueueWriteBuffer(bufA, true, 0, size * sizeof(int), A);
-	clu_Queue->enqueueWriteBuffer(bufB, true, 0, size * sizeof(int), B);
-
-	delete[] A;
-	delete[] B;
-
-	kernel->setArg(0, bufA);
-	kernel->setArg(1, bufB);
-	kernel->setArg(2, bufResult);
-	kernel->setArg(3, size);
-
-	clu_Queue->enqueueNDRangeKernel(*kernel, cl::NullRange, cl::NDRange(2 * size));
-	clu_Queue->finish();
-
 	int *result_gpu = new int[2 * size];
-	clu_Queue->enqueueReadBuffer(bufResult, true, 0, 2 * size * sizeof(int), result_gpu);
+	gpu_merge(A, B, result_gpu, size);
 
 	cout << "\nGPU result:\n";
 	print_array(result_gpu, 2 * size);
@@ -161,6 +166,10 @@ int main(int argc, char **argv)
 		if (result_cpu[i] != result_gpu[i])
 			cout << "value at index " << i << " is " << result_gpu[i] << " but should be " << result_cpu[i] << '\n';
 	}
+
+	delete[] A;
+	delete[] B;
+
 	delete[] result_cpu;
 	delete[] result_gpu;
 }
