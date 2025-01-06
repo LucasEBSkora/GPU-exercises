@@ -19,7 +19,7 @@ ELSE (WIN32)
 ENDIF(WIN32)
 
 add_definitions(-DSRC_PATH=\"${CMAKE_SOURCE_DIR}/\")
-add_executable(td3 main.cpp common/clutils.cpp)
+add_executable(td3 base.cpp common/clutils.cpp)
 if(APPLE)
 	target_link_libraries(td3 "-framework OpenCL" )
 else()
